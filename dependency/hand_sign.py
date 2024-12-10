@@ -25,10 +25,7 @@ mp_drawing_styles = mp.solutions.drawing_styles
 hands = mp_hands.Hands(static_image_mode=True, min_detection_confidence=0.3)
 
 labels_dict = {0: 'A', 1: 'B', 2: 'C', 3: 'D', 4: 'E', 5: 'F', 6: 'G', 7: 'H', 8: 'I', 9: 'J', 10: 'K', 11: 'L', 12: 'M', 13: 'N', 14: 'O', 15: 'P', 16: 'Q', 17: 'R', 18: 'S', 19: 'T', 20: 'U', 21: 'V', 22: 'W', 23: 'X', 24: 'Y', 25: 'Z', 26: '1', 27: '2', 28: '3', 29: '4', 30: '5', 31: '6', 32: '7', 33: '8', 34: '9', 35: '0', 36: ' ', 37: 'delete'}
-# Load the character to GIF mapping from JSON
-# with open('./public/alphabet/alphabet.json', 'r') as json_file:
-#     character_to_gif = json.load(json_file)
-    
+
 def process_frame(frame, hands, model, labels_dict):
     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     results = hands.process(frame_rgb)
@@ -62,9 +59,13 @@ def process_frame(frame, hands, model, labels_dict):
             prediction = model.predict([np.asarray(data_aux)])
             predicted_character = labels_dict[int(prediction[0])]
 
-            # Directly add the predicted character to the string
-            detected_characters += predicted_character
-            # print(detected_characters)
+            # Check for space and delete commands
+            if predicted_character == ' ':
+                detected_characters += ' '  # Add space
+            elif predicted_character == 'delete':
+                detected_characters = detected_characters[:-1]  # Remove last character
+            else:
+                detected_characters += predicted_character  # Add other characters
 
             H, W, _ = frame.shape
             x1 = int(min(x_) * W) - 10
@@ -86,6 +87,7 @@ async def open_camera():
     
     detected_characters = ""
     last_character = None  # Track the last detected character
+    recording = False  # To track whether recording is enabled
 
     try:
         while True:
@@ -94,24 +96,32 @@ async def open_camera():
                 print("Error: Could not read frame")
                 break
 
-            # Apply the prediction logic
-            current_characters = process_frame(frame, hands, model, labels_dict)
+            # Check for Tab key press (0x09 is the ASCII value for Tab)
+            key = cv2.waitKey(1) & 0xFF
+            if key == 0x09:  # If Tab key is pressed, toggle recording
+                recording = not recording
+                print(f"Recording {'enabled' if recording else 'disabled'}")
 
-            # Add characters to detected_characters only if they are different from the last one
-            for char in current_characters:
-                if char != last_character:
-                    detected_characters += char
-                    last_character = char
-                    # Yield the updated detected_characters
-                    yield detected_characters
+            if recording:
+                # Apply the prediction logic
+                current_characters = process_frame(frame, hands, model, labels_dict)
+
+                # Add characters to detected_characters only if they are different from the last one
+                for char in current_characters:
+                    if char != last_character:
+                        detected_characters += char
+                        last_character = char
+                        yield detected_characters
 
             # Display the instruction text on the frame
             cv2.putText(frame, "Press Q to turn off the camera", (10, 30), 
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
+            cv2.putText(frame, "Press Tab to start/stop recording", (10, 60), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
 
             cv2.imshow('Camera Test', frame)
 
-            if cv2.waitKey(1) & 0xFF == ord('q'):
+            if key == ord('q'):  # Quit if Q is pressed
                 yield "camera_closed"  # Send a message indicating the camera is closed
                 break
 
@@ -123,7 +133,3 @@ async def open_camera():
     finally:
         cap.release()
         cv2.destroyAllWindows()
-
-
-
-
